@@ -1,5 +1,5 @@
 #############################################################################
-# MRTG::Parse - v0.02                                                       #
+# MRTG::Parse - v0.03                                                       #
 #                                                                           # 
 # This module parses and utilizes the logfiles produced by MRTG             #
 # A full documentation is attached to this sourcecode in POD format.        #
@@ -36,7 +36,7 @@ require Exporter;
 our @ISA = qw(Exporter);
 our @EXPORT = qw(mrtg_parse);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 
 ###########################################
@@ -163,7 +163,7 @@ sub parser {
        }
       } elsif ($parse_type eq "individual") {
         
-	$date    = $column[0];
+	$date = $column[0];
 
         if (($date > $start_epoch) && ($date < $end_epoch)) {
 	  my $traffic_in  = $column[1];
@@ -208,47 +208,46 @@ sub traffic_output {
   my $unit;
   my $total_count;
 
-  if ($desired_unit) {
-    if ($desired_unit eq "B") {
-      $unit        = "Byte";
-      $total_count = $bytes;
-    } elsif ($desired_unit eq "KB") {
-      $unit        = "KB";
-      $total_count = $bytes / 1024;
-    } elsif ($desired_unit eq "MB") {
-      $unit        = "MB";
-      $total_count = $bytes / 1024000;
-    } elsif ($desired_unit eq "GB") {
-      $unit        = "GB";
-      $total_count = $bytes / 1024000000;
-    } elsif ($desired_unit eq "TB") {
-      $unit        = "TB";
-      $total_count = $bytes / 1024000000000;
+  my @unit_array = qw(B KB MB GB TB);
+  my $temp_unit  = $bytes;
+  my $counter    = 0;
+  my $check      = "false";
+
+  # Run through the @unit_array
+  foreach my $unit_entry (@unit_array) {
+    # We don't need to divide for the first entry, because it's already in byte
+    unless ($counter == 0) {
+      $temp_unit = ($temp_unit / 1024);
+      unless ($desired_unit) {
+        # If our value is lower than 1, we should stop here in order to retain an adequate unit.
+	if ($temp_unit < 1) {
+          last;
+        }
+      }
     }
-  } else {
-    if ($bytes < "1024") {
-      $unit        = "Byte";
-      $total_count = $bytes;
-    } elsif ($bytes < 1024000) {
-      $unit        = "KB";
-      $total_count = $bytes / 1024;
-    } elsif ($bytes < 1024000000) {
-      $unit        = "MB";
-      $total_count = $bytes / 1024000;
-    } elsif ($bytes < 1024000000000) {
-      $unit        = "GB";
-      $total_count = $bytes / 1024000000;
-    } elsif ($bytes < 1024000000000000) {
-      $unit        = "TB";
-      $total_count = $bytes / 1024000000000;
-    } else {
-      $total_count = $bytes;
+
+    $total_count  = $temp_unit;
+    $unit         = $unit_entry;
+
+    if ($desired_unit) {
+      if ($desired_unit eq $unit_entry) {
+        $check = "true";
+        last;
+      }
     }
+
+    $counter++;
   }
   
   push(@array, $total_count);
   push(@array, $unit);
-  return @array;
+  if ($desired_unit && $check eq "true") {
+    return @array;
+  } elsif (defined($desired_unit) && $check ne "true") {
+    die("Erorr: $desired_unit is a non valid unit!\n");
+  } else {
+    return @array;
+  }
 }
 
 
@@ -288,7 +287,7 @@ mrtg_parse() takes three argument:
 	      valid values are:   
 	                         - individual time periods like: 20040821-20050130 (ISO 8601)
 	                         - static values:                day, month, year
-	3rd:  the desired unit 
+	3rd:  the desired unit (optional)
 	      valid values are: 
 	                         - B, KB, MB, GB, TB 
 				 - if missing mrtg_parse will chose an adequate one for you
@@ -298,10 +297,6 @@ mrtg_parse() returns three values:
         1st:  Incoming traffic
 	2nd:  Outgoing traffic
 	3rd:  Sum of incoming and outgoing
-
-For future versions it is planed to support individual time periods that
-will allow to generate an output for the traffic between the 12-08-2005 and 
-the 12-20-2005 for example.
 
 
 =head2 EXPORT
@@ -314,6 +309,11 @@ mrtg_parse()
 http://people.ee.ethz.ch/~oetiker/webtools/mrtg/ - MRTG Homepage
 
 http://people.ee.ethz.ch/~oetiker/webtools/mrtg/mrtg-logfile.html - Description of the MRTG Logfile Format
+
+
+=head1 BUGS
+
+Please report any bugs or feature requests directly to mariof@cpan.org. Thanks!
 
 
 =head1 AUTHOR

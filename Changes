@@ -1,6 +1,11 @@
 Revision history for Perl extension MRTG::Parse.
 
-0.02  Sa  Mar 12 19:14:05 2005
+0.03  So Mar 13 19:30:02 2005
+        - The function for calculating the right
+	  unit, was rewritten.
+	- Some code cleanup was done.
+
+0.02  Sa Mar 12 19:14:05 2005
         - Individual time periods are supported by now!
 	  See the `perldoc MRTG::Parse` for details.
         - mrtg_parse() is now being exported!

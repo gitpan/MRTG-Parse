@@ -1,4 +1,4 @@
-MRTG-Parse version 0.02
+MRTG-Parse version 0.03
 =======================
 
 MRTG::Parse - Perl extension for parsing and utilizing the logfiles
@@ -35,7 +35,7 @@ mrtg_parse() takes three argument:
               valid values are:   
                                  - individual time periods like: 20040821-20050130 (ISO 8601)
                                  - static values:                day, month, year
-        3rd:  the desired unit 
+        3rd:  the desired unit (optional)
               valid values are: 
                                  - B, KB, MB, GB, TB 
                                  - if missing mrtg_parse will chose an adequate one for you
@@ -65,9 +65,24 @@ To install this module type the following:
 
 
 
+SEE ALSO
+
+http://people.ee.ethz.ch/~oetiker/webtools/mrtg/ - MRTG Homepage
+http://people.ee.ethz.ch/~oetiker/webtools/mrtg/mrtg-logfile.html - Description of the MRTG Logfile Format
+
+
+
+BUGS
+
+Please report any bugs or feature requests directly to mariof@cpan.org. Thanks!
+
+
+
 AUTHOR
 
 Mario Fuerderer, mariof@cpan.org
+
+
 
 COPYRIGHT AND LICENSE
 
