@@ -1,5 +1,5 @@
 #############################################################################
-# MRTG::Parse - v0.01                                                       #
+# MRTG::Parse - v0.02                                                       #
 #                                                                           # 
 # This module parses and utilizes the logfiles produced by MRTG             #
 # A full documentation is attached to this sourcecode in POD format.        #
@@ -20,7 +20,7 @@
 # License along with this library; if not, write to the Free Software       #
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA #
 #                                                                           #
-#                                    Mario Fuerderer <mario@codehack.org)   #
+#                                    Mario Fuerderer <mariof@cpan.org)      #
 #                                                                           #
 #############################################################################
 
@@ -29,12 +29,14 @@ package MRTG::Parse;
 use 5.006;
 use strict;
 use warnings;
+use Time::Local;
 
 require Exporter;
 
 our @ISA = qw(Exporter);
+our @EXPORT = qw(mrtg_parse);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 
 ###########################################
@@ -45,13 +47,14 @@ our $VERSION = '0.01';
 sub mrtg_parse {
   my $logfile  = $_[0];
   my $period   = $_[1];
+  my $unit     = $_[2];
 
   # Start the parser and save total incoming and outgoing bytes to @array_traffic_total
   my @array_traffic_total           = &parser($logfile, $period);
-  # Convert the bytes ito the right unit (probably called "prefix multiplier").
-  my @array_traffic_total_unit_in   = &traffic_output($array_traffic_total[0]);
-  my @array_traffic_total_unit_out  = &traffic_output($array_traffic_total[1]);
-  my @array_traffic_total_unit_sum  = &traffic_output($array_traffic_total[0] + $array_traffic_total[1]);
+  # Convert the bytes into the right unit (you may call it "prefix multiplier").
+  my @array_traffic_total_unit_in   = &traffic_output($array_traffic_total[0], $unit);
+  my @array_traffic_total_unit_out  = &traffic_output($array_traffic_total[1], $unit);
+  my @array_traffic_total_unit_sum  = &traffic_output($array_traffic_total[0] + $array_traffic_total[1], $unit);
 
   my @return;
   push(@return, join(' ', @array_traffic_total_unit_in));
@@ -68,10 +71,49 @@ sub mrtg_parse {
 # mrtg_parse().                           # 
 ########################################### 
 sub parser {                              
-  my ($weekday, $month, $day, $time, $year) = split(/ +/, localtime(time()));
-  
   my $logfile = $_[0];
   my $period  = $_[1];
+
+  my $parse_type;
+  my $start_date;
+  my $end_date;
+  my $start_epoch;
+  my $end_epoch;
+  my $weekday;
+  my $month;
+  my $day;
+  my $time;
+  my $year;
+
+  # Decide whether we should parse for static time period...
+  if ($period eq "day" || $period eq "month" || $period eq "year") {
+    ($weekday, $month, $day, $time, $year) = split(/ +/, localtime(time()));
+    $parse_type = "static";  
+  # ...or an individual one.
+  } elsif ($period =~ /\d{8}-\d{8}/) {
+    ($start_date, $end_date) = split(/-/, $period);
+
+    unless ($start_date - $end_date =~ /-/) {
+      die("Error: time periods are not in the right order!\n");
+    }
+    
+    # Calculate start and end date to seconds since the system epoch
+    $start_date  =~ /(\d{4})(\d{2})(\d{2})/;
+    my $start_year  = $1;
+    my $start_month = $2;
+    my $start_day   = $3;
+    $start_epoch = timelocal("00", "00", "00", $start_day, $start_month-1, $start_year);
+
+    $end_date    =~ /(\d{4})(\d{2})(\d{2})/;
+    my $end_year    = $1;
+    my $end_month   = $2;
+    my $end_day     = $3;
+    $end_epoch   = timelocal("00", "00", "00", $end_day, $end_month-1, $end_year);
+
+    $parse_type = "individual";
+  } else {
+    die("Error: time period is not present or in an unkown format!\n");
+  }
 
   open(LOG, "$logfile") or die "Error: Could not open MRTG-Logfile ($logfile)";
 
@@ -81,43 +123,66 @@ sub parser {
   my $last_date         = 0;
   my $counter           = 0;
 
-
   while (my $line=<LOG>) {
-    # Split first column any convert the unix timestamp to something readable.
-    my @column = split(/\s+/, $line);
-    my $date = scalar localtime($column[0]);
     # We want to ignore the first line, because it's just the sum of the rest.
     unless ($counter == 0) {
+      my $date;
+      my @column = split(/\s+/, $line);
       # Build the match-pattern
       my $pattern; 
-      if ($period eq "day") {
-        $pattern = ".+ $month.+$day .+$year";
-      } elsif($period eq "month") {
-        $pattern = ".+$month.+$year";
-      } elsif($period eq "year") {
-        $pattern = ".+$year";
-      }
-      # Check if the current line matches out pattern.
-      if ($date =~ /^$pattern$/) {
-        my $traffic_in  = $column[1];
-        my $traffic_out = $column[2];
+      if ($parse_type eq "static") {
+        $date = scalar localtime($column[0]);
+        if ($period eq "day") {
+          $pattern = ".+ $month.+$day .+$year";
+        } elsif($period eq "month") {
+          $pattern = ".+$month.+$year";
+        } elsif($period eq "year") {
+          $pattern = ".+$year";
+        }
+       # Check if the current line matches out pattern.
+       if ($date =~ /^$pattern$/) {
+         my $traffic_in  = $column[1];
+         my $traffic_out = $column[2];
     
-        my $time_range;
+         my $time_range;
  
-        unless ($last_date == 0) { 
-          # Calculate the time difference between the current and the previous processd line.
-          $time_range = $last_date - $column[0];
-        } else {
-          # Set time range to zero if its the first line.
-          $time_range = 0;
-        } 
+         unless ($last_date == 0) { 
+           # Calculate the time difference between the current and the previously processd line.
+           $time_range = $last_date - $column[0];
+         } else {
+           # Set time range to zero if it's the first line.
+           $time_range = 0;
+         } 
         
-        # Multiply the bytes with the time range.
-        $traffic_total_in  += $traffic_in  * $time_range;
-        $traffic_total_out += $traffic_out * $time_range;
+         # Multiply the bytes with the time range.
+         $traffic_total_in  += $traffic_in  * $time_range;
+         $traffic_total_out += $traffic_out * $time_range;
         
-        # Set the $last_date variable to the new value.
-        $last_date = $column[0]; 
+         # Set the $last_date variable to the new value.
+         $last_date  = $column[0];
+       }
+      } elsif ($parse_type eq "individual") {
+        
+	$date    = $column[0];
+
+        if (($date > $start_epoch) && ($date < $end_epoch)) {
+	  my $traffic_in  = $column[1];
+	  my $traffic_out = $column[2];
+
+	  my $time_range;
+
+	  unless ($last_date == 0) {
+	    $time_range = $last_date - $column[0];
+          } else {
+	    $time_range = 0;
+	  }
+
+          $traffic_total_in  += $traffic_in  * $time_range;
+	  $traffic_total_out += $traffic_out * $time_range;
+
+	  $last_date  = $column[0];
+	}
+	
       }
     }
     $counter++;
@@ -136,33 +201,55 @@ sub parser {
 # This is just to get the right unit...   #
 ###########################################
 sub traffic_output {
-  my $bytes = $_[0];
+  my $bytes        = $_[0];
+  my $desired_unit = $_[1];
+  
+  my @array;
   my $unit;
   my $total_count;
-  if ($bytes < "1024") {
-    $unit        = "Byte";
-    $total_count = $bytes;
-  } elsif ($bytes < 1024000) {
-    $unit        = "KB";
-    $total_count = $bytes / 1024;
-  } elsif ($bytes < 1024000000) {
-    $unit        = "MB";
-    $total_count = $bytes / 1024000;
-  } elsif ($bytes < 1024000000000) {
-    $unit        = "GB";
-    $total_count = $bytes / 1024000000;
-  } elsif ($bytes < 1024000000000000) {
-    $unit        = "TB";
-    $total_count = $bytes / 1024000000000;
+
+  if ($desired_unit) {
+    if ($desired_unit eq "B") {
+      $unit        = "Byte";
+      $total_count = $bytes;
+    } elsif ($desired_unit eq "KB") {
+      $unit        = "KB";
+      $total_count = $bytes / 1024;
+    } elsif ($desired_unit eq "MB") {
+      $unit        = "MB";
+      $total_count = $bytes / 1024000;
+    } elsif ($desired_unit eq "GB") {
+      $unit        = "GB";
+      $total_count = $bytes / 1024000000;
+    } elsif ($desired_unit eq "TB") {
+      $unit        = "TB";
+      $total_count = $bytes / 1024000000000;
+    }
   } else {
-    $total_count = $bytes;
+    if ($bytes < "1024") {
+      $unit        = "Byte";
+      $total_count = $bytes;
+    } elsif ($bytes < 1024000) {
+      $unit        = "KB";
+      $total_count = $bytes / 1024;
+    } elsif ($bytes < 1024000000) {
+      $unit        = "MB";
+      $total_count = $bytes / 1024000;
+    } elsif ($bytes < 1024000000000) {
+      $unit        = "GB";
+      $total_count = $bytes / 1024000000;
+    } elsif ($bytes < 1024000000000000) {
+      $unit        = "TB";
+      $total_count = $bytes / 1024000000000;
+    } else {
+      $total_count = $bytes;
+    }
   }
-  my @array;
+  
   push(@array, $total_count);
   push(@array, $unit);
   return @array;
 }
-
 
 
 __END__
@@ -172,6 +259,7 @@ __END__
 MRTG::Parse - Perl extension for parsing and utilizing the logfiles
 generated by the famous MRTG Tool.
 
+
 =head1 SYNOPSIS
 
   use strict;
@@ -179,8 +267,9 @@ generated by the famous MRTG Tool.
   
   my $mrtg_logfile = "/var/www/htdocs/mrtg/eth0.log";
   my $period       = "day";
-  
-  my ($traffic_incoming, $traffic_outgoing, $traffic_sum) = MRTG::Parse::mrtg_parse($mrtg_logfile, $period);
+  my $desired_unit = "GB"; 
+
+  my ($traffic_incoming, $traffic_outgoing, $traffic_sum) = mrtg_parse($mrtg_logfile, $period, $desired_unit);
 
   print "Incoming Traffic:   $traffic_incoming\n";
   print "Outgoing Traffic:   $traffic_outgoing\n";
@@ -191,28 +280,46 @@ generated by the famous MRTG Tool.
 
 This perl extension enables its users to parse and utilize the logfiles that
 are generated by the famous MRTG (Multi Router Traffic Grapher) tool.
-At present it can only handle three different default time periods:
 
-        - day      (traffic generated on the current day)
-	- month    (traffic generated in the current month)
-	- year     (traffic generated in the current year)
+mrtg_parse() takes three argument:
+        
+	1st:  filename of the mrtg logfile
+	2nd:  time period to genereate the output for
+	      valid values are:   
+	                         - individual time periods like: 20040821-20050130 (ISO 8601)
+	                         - static values:                day, month, year
+	3rd:  the desired unit 
+	      valid values are: 
+	                         - B, KB, MB, GB, TB 
+				 - if missing mrtg_parse will chose an adequate one for you
 
+mrtg_parse() returns three values:
 
+        1st:  Incoming traffic
+	2nd:  Outgoing traffic
+	3rd:  Sum of incoming and outgoing
+
+For future versions it is planed to support individual time periods that
+will allow to generate an output for the traffic between the 12-08-2005 and 
+the 12-20-2005 for example.
 
 
 =head2 EXPORT
 
-None by default.
+mrtg_parse()
 
 
 =head1 SEE ALSO
 
 http://people.ee.ethz.ch/~oetiker/webtools/mrtg/ - MRTG Homepage
+
 http://people.ee.ethz.ch/~oetiker/webtools/mrtg/mrtg-logfile.html - Description of the MRTG Logfile Format
+
 
 =head1 AUTHOR
 
-Mario Fuerderer, E<lt>mario@codehack.orgE<gt>
+Mario Fuerderer, E<lt>mariof@cpan.orgE<gt>
+
 
 =head1 COPYRIGHT AND LICENSE
 
@@ -231,5 +338,6 @@ Lesser General Public License for more details.
 You should have received a copy of the GNU Lesser General Public          
 License along with this library; if not, write to the Free Software       
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+
 
 =cut

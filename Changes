@@ -1,4 +1,11 @@
 Revision history for Perl extension MRTG::Parse.
 
+0.02  Sa  Mar 12 19:14:05 2005
+        - Individual time periods are supported by now!
+	  See the `perldoc MRTG::Parse` for details.
+        - mrtg_parse() is now being exported!
+        - Added some testing
+	- Fixed typos
+
 0.01  Thu Mar 11 15:20:58 2005
 	- Initial Release (beta status)
